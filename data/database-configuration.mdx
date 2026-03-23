@@ -1,0 +1,239 @@
+---
+title: Database Configuration
+description: R2DBC reactive database setup, per-service connection properties, and Docker Compose PostgreSQL services.
+---
+
+GEMS LMS uses **Spring Data R2DBC** for reactive, non-blocking database access in every microservice. Each service connects to its own dedicated PostgreSQL 16 instance, configured via environment variables that are injected at runtime by Docker Compose.
+
+---
+
+## R2DBC overview
+
+R2DBC (Reactive Relational Database Connectivity) is the non-blocking alternative to JDBC. Instead of holding a thread per query, it uses reactive streams so that a small number of threads can serve many concurrent database operations — a good fit for the WebFlux-based services in this project.
+
+**Gradle dependencies** (identical across all three services):
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.postgresql:r2dbc-postgresql'
+}
+```
+
+| Dependency | Purpose |
+|---|---|
+| `spring-boot-starter-data-r2dbc` | Auto-configuration, `R2dbcEntityTemplate`, repository support. |
+| `r2dbc-postgresql` | PostgreSQL-specific R2DBC driver from the `org.postgresql` group. |
+
+**Connection URL format**:
+
+```
+r2dbc:postgresql://{host}:{port}/{database}
+```
+
+The `r2dbc:` scheme prefix distinguishes these URLs from standard JDBC `jdbc:postgresql://` URLs and must not be omitted.
+
+---
+
+## Per-service configuration
+
+All connection properties are externalised as environment variables so that the same Docker image can connect to different databases across environments without rebuilding.
+
+### ms-auth
+
+```properties
+# Auth Microservice Configuration
+server.port=${AUTH_PORT}
+spring.application.name=ms-auth
+
+# R2DBC Configuration
+spring.r2dbc.url=${AUTH_R2DBC_URL}
+spring.r2dbc.username=${AUTH_R2DBC_USERNAME}
+spring.r2dbc.password=${AUTH_R2DBC_PASSWORD}
+
+# Logging configuration
+logging.level.com.gems.auth=INFO
+logging.level.org.springframework.web=INFO
+logging.level.org.springframework.r2dbc=DEBUG
+
+# Management endpoints
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+The `AUTH_R2DBC_URL` variable is resolved by Docker Compose to:
+
+```
+r2dbc:postgresql://postgres-auth:${AUTH_DB_PORT}/auth_db
+```
+
+### ms-admin
+
+```properties
+# Admin Microservice Configuration
+server.port=${ADMIN_PORT}
+spring.application.name=ms-admin
+
+# R2DBC Configuration
+spring.r2dbc.url=${ADMIN_R2DBC_URL}
+spring.r2dbc.username=${ADMIN_R2DBC_USERNAME}
+spring.r2dbc.password=${ADMIN_R2DBC_PASSWORD}
+
+# Logging configuration
+logging.level.com.gems.admin=INFO
+logging.level.org.springframework.web=INFO
+logging.level.org.springframework.r2dbc=DEBUG
+
+# Management endpoints
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+The `ADMIN_R2DBC_URL` variable resolves to:
+
+```
+r2dbc:postgresql://postgres-admin:${ADMIN_DB_PORT}/admin_db
+```
+
+### ms-education
+
+```properties
+# Education Microservice Configuration
+server.port=${EDUCATION_PORT}
+spring.application.name=ms-education
+
+# R2DBC Configuration
+spring.r2dbc.url=${EDUCATION_R2DBC_URL}
+spring.r2dbc.username=${EDUCATION_R2DBC_USERNAME}
+spring.r2dbc.password=${EDUCATION_R2DBC_PASSWORD}
+
+# Logging configuration
+logging.level.com.gems.education=INFO
+logging.level.org.springframework.web=INFO
+logging.level.org.springframework.r2dbc=DEBUG
+
+# Management endpoints
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+The `EDUCATION_R2DBC_URL` variable resolves to:
+
+```
+r2dbc:postgresql://postgres-education:${EDUCATION_DB_PORT}/education_db
+```
+
+---
+
+## Logging levels
+
+All three services share the same logging configuration pattern:
+
+| Property | Level | Purpose |
+|---|---|---|
+| `logging.level.com.gems.{service}` | `INFO` | Application-level logs for the service's own packages. |
+| `logging.level.org.springframework.web` | `INFO` | Spring Web / WebFlux request lifecycle logs. |
+| `logging.level.org.springframework.r2dbc` | `DEBUG` | Verbose R2DBC driver logs — useful for diagnosing slow queries or connection pool issues during development. |
+
+<Note>
+  `DEBUG` on `org.springframework.r2dbc` will log every SQL statement and connection acquisition event. This is helpful locally but **should be raised to `INFO` or `WARN` in production** to avoid excessive log volume.
+</Note>
+
+---
+
+## Docker Compose database services
+
+Each microservice has a dedicated `postgres:16` container. The containers share a single bridge network (`gems-lms-network`) so that service hostnames (e.g., `postgres-auth`) resolve within the cluster.
+
+<CardGroup cols={2}>
+  <Card title="postgres-admin" icon="database">
+    **Image**: `postgres:16`  
+    **Container**: `gems-postgres-admin`  
+    **Default DB**: `admin_db`  
+    **Default user**: `admin_user`  
+    **Host port**: `5432` → container `5432`  
+    **Volume**: `postgres_admin_data`
+  </Card>
+  <Card title="postgres-auth" icon="database">
+    **Image**: `postgres:16`  
+    **Container**: `gems-postgres-auth`  
+    **Default DB**: `auth_db`  
+    **Default user**: `auth_user`  
+    **Host port**: `5433` → container `5432`  
+    **Volume**: `postgres_auth_data`
+  </Card>
+  <Card title="postgres-education" icon="database">
+    **Image**: `postgres:16`  
+    **Container**: `gems-postgres-education`  
+    **Default DB**: `education_db`  
+    **Default user**: `education_user`  
+    **Host port**: `5434` → container `5432`  
+    **Volume**: `postgres_education_data`
+  </Card>
+</CardGroup>
+
+### Docker Compose snippet
+
+```yaml
+  postgres-auth:
+    image: postgres:16
+    container_name: gems-postgres-auth
+    environment:
+      - POSTGRES_DB=${AUTH_DB_NAME:-auth_db}
+      - POSTGRES_USER=${AUTH_DB_USER:-auth_user}
+      - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-auth_password}
+    ports:
+      - "${AUTH_DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - gems-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER:-auth_user} -d ${AUTH_DB_NAME:-auth_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
+The `admin` and `education` containers follow the identical pattern with their respective variable prefixes and port numbers.
+
+### Health checks
+
+Every PostgreSQL container runs `pg_isready` on a 10-second interval with a 5-second timeout and 5 retries before being marked unhealthy. Dependent microservice containers use `condition: service_healthy` so they will not start until their database is accepting connections:
+
+```yaml
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+```
+
+### Named volumes
+
+```yaml
+volumes:
+  postgres_admin_data:
+  postgres_auth_data:
+  postgres_education_data:
+```
+
+Named volumes survive `docker compose down` (but not `docker compose down -v`). Data is stored under Docker's managed volume directory on the host, typically `/var/lib/docker/volumes/`.
+
+---
+
+## Schema initialization
+
+Each service's `src/main/resources/schema.sql` is picked up from the classpath by Spring Boot's R2DBC auto-configuration and executed against the database on startup. Because every DDL statement uses `CREATE TABLE IF NOT EXISTS`, the initialization is safe to run repeatedly.
+
+```
+src/main/resources/
+└── schema.sql   ← executed by R2DBC on application startup
+```
+
+<Warning>
+  The Docker Compose defaults (`auth_password`, `admin_password`, `education_password`) are **development-only placeholders**. Always override `POSTGRES_PASSWORD` and the corresponding `*_R2DBC_PASSWORD` environment variables with strong, randomly-generated secrets in staging and production environments. Store these secrets in a secrets manager or an encrypted `.env` file that is never committed to version control.
+</Warning>
+
+<Tip>
+  For production deployments, replace the built-in `schema.sql` initialization with a dedicated migration tool such as **Flyway** or **Liquibase**. These tools provide versioned, auditable, rollback-capable migrations and integrate well with Spring Boot via `flyway-core` or `liquibase-core` on the classpath. The R2DBC starter's schema auto-run is convenient for local development but lacks the migration tracking needed for long-lived production databases.
+</Tip>

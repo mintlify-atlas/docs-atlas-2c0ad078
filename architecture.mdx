@@ -1,0 +1,199 @@
+---
+title: Architecture overview
+description: How GEMS LMS API is structured as a reactive Java microservices platform using hexagonal architecture and a database-per-service pattern.
+---
+
+GEMS LMS API is a multi-module Gradle monorepo (`gems-lms-api`) built with Spring Boot 3.4.x. It follows a microservices topology where each service owns its domain, its database, and its deployment unit.
+
+## Service topology
+
+```
+                         ┌─────────────────────────────────────────────────┐
+                         │              gems-lms-network (bridge)           │
+                         │                                                  │
+  Client requests        │  ┌─────────────┐                                 │
+ ──────────────────────► │  │ api-gateway │ :8080                           │
+                         │  └──────┬──────┘                                 │
+                         │         │  routes to                             │
+                         │   ┌─────┼──────────────┐                         │
+                         │   ▼     ▼              ▼                         │
+                         │  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+                         │  │ ms-auth  │  │ms-educatn│  │ ms-admin │       │
+                         │  │  :8082   │  │  :8081   │  │  :8083   │       │
+                         │  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+                         │       │              │             │              │
+                         │       ▼              ▼             ▼              │
+                         │  ┌─────────┐  ┌──────────┐  ┌──────────┐        │
+                         │  │postgres │  │ postgres │  │ postgres │        │
+                         │  │  -auth  │  │-education│  │  -admin  │        │
+                         │  │  :5433  │  │  :5434   │  │  :5432   │        │
+                         │  └─────────┘  └──────────┘  └──────────┘        │
+                         └─────────────────────────────────────────────────┘
+```
+
+All containers run on the `gems-lms-network` Docker bridge network (`name: gems-lms-network`). Service-to-database communication uses internal DNS names (`postgres-auth`, `postgres-education`, `postgres-admin`) that are only resolvable inside the network.
+
+## Services at a glance
+
+| Service | Container | Internal port | Host port (default) | Responsibility |
+| --- | --- | --- | --- | --- |
+| `api-gateway` | `gems-api-gateway` | 8080 | `API_GATEWAY_PORT` (8080) | Single entry point; routes client requests to downstream services |
+| `ms-education` | `gems-ms-education` | 8081 | `EDUCATION_PORT` (8081) | Course content, learning materials, and educational resources |
+| `ms-auth` | `gems-ms-auth` | 8082 | `AUTH_PORT` (8082) | User registration, authentication, and session management |
+| `ms-admin` | `gems-ms-admin` | 8083 | `ADMIN_PORT` (8083) | Admin user accounts and platform-level configuration |
+
+A `shared` Gradle subproject (`java-library`) provides common domain types, value objects, and utilities that all services depend on at compile time.
+
+<Columns cols={2}>
+  <Card title="Reactive stack" icon="bolt">
+    Every microservice uses Spring WebFlux and R2DBC for fully non-blocking I/O from the HTTP layer down to the database.
+  </Card>
+  <Card title="Database per service" icon="database">
+    Each microservice owns a dedicated PostgreSQL 16 instance. No service queries another service's database directly.
+  </Card>
+  <Card title="Hexagonal architecture" icon="hexagon">
+    Domain logic is isolated from infrastructure through a strict three-layer package structure enforced in every service.
+  </Card>
+  <Card title="Multi-stage Docker builds" icon="docker">
+    Each Dockerfile uses `eclipse-temurin:24-jdk` to build the JAR and `eclipse-temurin:24-jre` as the lean runtime image.
+  </Card>
+</Columns>
+
+## Hexagonal (clean) architecture
+
+Every microservice follows the same internal package structure, organized into three layers that enforce the dependency rule: outer layers depend on inner layers, never the reverse.
+
+```
+com.gems.{service}/
+├── domain/
+│   ├── entities/        # Core business entities
+│   ├── values/          # Immutable value objects
+│   └── exceptions/      # Domain-specific exceptions
+├── application/
+│   ├── gateway/         # Port interfaces (inbound/outbound contracts)
+│   ├── command/         # Command objects (write-side input models)
+│   ├── response/        # Response/DTO objects (read-side output models)
+│   └── {Feature}UseCase # Use case implementations
+└── infrastructure/
+    ├── driving/         # Inbound adapters (HTTP controllers, WebFlux routes)
+    └── driven/          # Outbound adapters (R2DBC repositories, external clients)
+```
+
+The `shared` module mirrors this structure under `com.gems.shared`, providing reusable domain building blocks:
+
+```
+com.gems.shared/
+├── domain/
+│   ├── entities/
+│   ├── values/
+│   └── exceptions/
+└── application/
+    ├── gateway/
+    ├── command/
+    └── response/
+```
+
+### Layer responsibilities
+
+**Domain layer** — Pure business logic with zero framework dependencies. Contains entities, value objects, and domain exceptions. This layer knows nothing about Spring, R2DBC, or HTTP.
+
+**Application layer** — Orchestrates use cases by coordinating domain objects and calling outbound port interfaces (`gateway/`). Use cases return reactive types (`Mono`, `Flux`) but remain unaware of how data is persisted or how requests arrive.
+
+**Infrastructure layer** — Implements the ports defined in the application layer.
+- `driving/` adapters (e.g., Spring WebFlux `RouterFunction` or `@RestController`) translate HTTP requests into use case invocations.
+- `driven/` adapters (e.g., R2DBC repository implementations) translate use case port calls into database operations.
+
+## Reactive stack
+
+All services are built on Spring WebFlux (`spring-boot-starter-webflux`) with R2DBC for non-blocking database access.
+
+```properties
+# Shared pattern across all services (ms-auth shown)
+spring.r2dbc.url=${AUTH_R2DBC_URL}
+spring.r2dbc.username=${AUTH_R2DBC_USERNAME}
+spring.r2dbc.password=${AUTH_R2DBC_PASSWORD}
+```
+
+The R2DBC URL uses the internal Docker hostname:
+
+```
+r2dbc:postgresql://postgres-auth:${AUTH_DB_PORT}/${AUTH_DB_NAME}
+```
+
+This means every HTTP request to a microservice is handled on a non-blocking event loop from ingress through to the PostgreSQL query — no threads block waiting for I/O.
+
+## Database schemas
+
+Each service initializes its schema via a `schema.sql` file loaded by Spring at startup.
+
+<CodeGroup>
+
+```sql ms-auth schema
+-- Auth Database Schema
+CREATE TABLE IF NOT EXISTS users (
+    user_id       BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(50)  UNIQUE NOT NULL,
+    email         VARCHAR(100) UNIQUE NOT NULL,
+    password      VARCHAR(255)        NOT NULL,
+    first_name    VARCHAR(50)         NOT NULL,
+    last_name     VARCHAR(50)         NOT NULL,
+    is_active     BOOLEAN             NOT NULL DEFAULT true,
+    created_at    TIMESTAMP                    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP                    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+```sql ms-admin schema
+-- Admin Database Schema
+CREATE TABLE IF NOT EXISTS admin_users (
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(50)  UNIQUE NOT NULL,
+    email         VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255)        NOT NULL,
+    first_name    VARCHAR(50)         NOT NULL,
+    last_name     VARCHAR(50)         NOT NULL,
+    role          VARCHAR(20)         NOT NULL DEFAULT 'ADMIN',
+    is_active     BOOLEAN             NOT NULL DEFAULT true,
+    created_at    TIMESTAMP                    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP                    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+</CodeGroup>
+
+`ms-education` manages its schema independently and adds tables as the education domain grows.
+
+## Observability
+
+All four services expose Spring Boot Actuator endpoints on the same base path:
+
+```properties
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+Docker Compose health checks poll `/actuator/health` every 30 seconds with a 10-second timeout and 3 retries. The `api-gateway` container depends on all three microservices reaching a healthy state before it starts.
+
+## Build system
+
+The project uses a Gradle multi-project build (`settings.gradle` includes `api-gateway`, `ms-auth`, `ms-admin`, `ms-education`, and `shared`). The root `build.gradle` applies Spring Boot 3.4.5 and the Spring Dependency Management plugin to all subprojects except `shared`, and configures Java 24 via the toolchain API.
+
+```groovy
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(24)
+  }
+}
+```
+
+To build a single service JAR:
+
+```bash
+./gradlew :ms-auth:build -x test
+```
+
+To run a service locally without Docker:
+
+```bash
+./gradlew :ms-auth:bootRun
+```

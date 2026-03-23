@@ -1,0 +1,181 @@
+---
+title: API Gateway
+description: Single entry point for all external requests, routing traffic to downstream microservices.
+---
+
+<CardGroup cols={3}>
+  <Card title="Service" icon="server">
+    `api-gateway`
+  </Card>
+  <Card title="Port" icon="network">
+    `8080`
+  </Card>
+  <Card title="Base URL" icon="globe">
+    `http://localhost:8080`
+  </Card>
+</CardGroup>
+
+## Overview
+
+The API Gateway is the single entry point for all external client requests in the GEMS LMS platform. It receives incoming HTTP traffic and routes requests to the appropriate downstream microservice — `ms-auth`, `ms-education`, or `ms-admin`. No business logic lives here; its sole responsibility is traffic routing, providing a unified surface for clients to interact with the platform.
+
+<CardGroup cols={2}>
+  <Card title="Reactive runtime" icon="bolt">
+    Built on Spring WebFlux for non-blocking, event-driven request handling.
+  </Card>
+  <Card title="Centralized entry point" icon="shield">
+    All external traffic passes through the gateway before reaching any microservice.
+  </Card>
+  <Card title="Actuator observability" icon="chart-bar">
+    Health, info, and metrics endpoints exposed via Spring Boot Actuator.
+  </Card>
+  <Card title="Multi-stage Docker build" icon="cube">
+    Separate JDK build stage and lean JRE runtime image for minimal container size.
+  </Card>
+</CardGroup>
+
+## Technology
+
+| Property | Value |
+|---|---|
+| Spring Boot | 3.4.5 |
+| Java | 24 |
+| Runtime | Spring WebFlux (Netty) |
+| Build tool | Gradle |
+| Group ID | `gems.com` |
+| Artifact version | `1.0.0` |
+| Java package | `com.gems.api` |
+
+## Main class
+
+The application is bootstrapped by `ApiGatewayApplication`, annotated with `@SpringBootApplication` to enable auto-configuration, component scanning, and Spring Boot's embedded server.
+
+```java
+package com.gems.api;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ApiGatewayApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(ApiGatewayApplication.class);
+  }
+}
+```
+
+## Configuration
+
+Configuration is sourced from `application.properties`. Runtime values are injected via environment variables.
+
+```properties
+# Server
+server.port=${API_GATEWAY_PORT}
+spring.application.name=api-gateway
+
+# Logging
+logging.level.com.gems.admin=INFO
+logging.level.org.springframework.web=INFO
+
+# Actuator
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+### Environment variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `API_GATEWAY_PORT` | Port the gateway listens on inside the container | `8080` |
+
+## Package structure
+
+The service follows hexagonal architecture, separating domain logic from infrastructure concerns.
+
+```
+com.gems.api/
+├── ApiGatewayApplication.java   # Application entry point
+├── domain/                      # Core domain models and interfaces
+├── application/                 # Use cases (inbound/outbound ports)
+└── infrastructure/
+    ├── driving/                 # Inbound adapters (HTTP controllers, WebFlux routes)
+    └── driven/                  # Outbound adapters (downstream service clients)
+```
+
+## Health check
+
+Spring Boot Actuator exposes a health endpoint used by Docker and load balancers to verify the service is ready.
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+The Docker health check runs this command every 30 seconds with a 3-second timeout, allowing a 5-second startup grace period before marking the container unhealthy.
+
+### Available actuator endpoints
+
+| Endpoint | Path |
+|---|---|
+| Health | `GET /actuator/health` |
+| Info | `GET /actuator/info` |
+| Metrics | `GET /actuator/metrics` |
+
+<Note>
+Health details are only shown to authorized requests (`show-details=when-authorized`). An unauthenticated `GET /actuator/health` returns a simple `{"status": "UP"}` response.
+</Note>
+
+## Docker build
+
+The Dockerfile uses a two-stage build to keep the final image small:
+
+1. **Build stage** — `eclipse-temurin:24-jdk`: compiles and assembles the fat JAR via `./gradlew :api-gateway:build -x test`.
+2. **Runtime stage** — `eclipse-temurin:24-jre`: copies only the assembled JAR, exposing port `8080`.
+
+```dockerfile
+# Build stage
+FROM eclipse-temurin:24-jdk as builder
+WORKDIR /app
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle .
+COPY settings.gradle .
+COPY shared shared
+COPY api-gateway api-gateway
+RUN chmod +x gradlew
+RUN ./gradlew :api-gateway:build -x test
+
+# Runtime stage
+FROM eclipse-temurin:24-jre
+WORKDIR /app
+COPY --from=builder /app/api-gateway/build/libs/*.jar app.jar
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+## Running locally
+
+```bash
+./gradlew :api-gateway:bootRun
+```
+
+The service starts on the port defined by `API_GATEWAY_PORT`. Ensure that environment variable is set before starting, or pass it inline:
+
+```bash
+API_GATEWAY_PORT=8080 ./gradlew :api-gateway:bootRun
+```
+
+<Tip>
+Use Docker Compose to start the full GEMS LMS stack — gateway, all microservices, and their databases — with a single command. This is the recommended approach for local development and integration testing.
+</Tip>
+
+## Downstream dependencies
+
+The API Gateway routes to the following microservices:
+
+| Service | Default port | Documentation |
+|---|---|---|
+| `ms-auth` | `8082` | [Authentication service](/services/ms-auth) |
+| `ms-education` | `8081` | [Education service](/services/ms-education) |
+| `ms-admin` | `8083` | [Admin service](/services/ms-admin) |

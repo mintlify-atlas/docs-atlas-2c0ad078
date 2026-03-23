@@ -1,0 +1,192 @@
+---
+title: Configuration reference
+description: Environment variables and .env file reference for the GEMS LMS Docker Compose stack.
+---
+
+All GEMS LMS services are configured exclusively through environment variables. Docker Compose reads these from a `.env` file at the project root and passes them to each container.
+
+<Warning>
+The default database credentials listed below are suitable for local development only. Always set strong, unique passwords before deploying to any shared or production environment.
+</Warning>
+
+## Sample .env file
+
+Create this file at the project root before running `docker compose up`.
+
+```bash .env
+# API Gateway
+API_GATEWAY_PORT=8080
+
+# Education service
+EDUCATION_PORT=8081
+EDUCATION_DB_PORT=5434
+EDUCATION_DB_NAME=education_db
+EDUCATION_DB_USER=education_user
+EDUCATION_DB_PASSWORD=education_password
+
+# Auth service
+AUTH_PORT=8082
+AUTH_DB_PORT=5433
+AUTH_DB_NAME=auth_db
+AUTH_DB_USER=auth_user
+AUTH_DB_PASSWORD=auth_password
+
+# Admin service
+ADMIN_PORT=8083
+ADMIN_DB_PORT=5432
+ADMIN_DB_NAME=admin_db
+ADMIN_DB_USER=admin_user
+ADMIN_DB_PASSWORD=admin_password
+```
+
+## API gateway
+
+<ParamField path="body.API_GATEWAY_PORT" type="number" required>
+  Host port mapped to the API gateway container's internal port `8080`. All external traffic enters the platform through this port.
+</ParamField>
+
+## Education service
+
+<ParamField path="body.EDUCATION_PORT" type="number" required>
+  Host port mapped to the `ms-education` container's internal port `8081`.
+</ParamField>
+
+<ParamField path="body.EDUCATION_R2DBC_URL" type="string" required>
+  R2DBC connection URL passed to the Spring Boot application. Docker Compose constructs this value automatically:
+
+  ```
+  r2dbc:postgresql://postgres-education:${EDUCATION_DB_PORT}/${EDUCATION_DB_NAME}
+  ```
+
+  The hostname `postgres-education` resolves inside the `gems-lms-network` bridge network.
+</ParamField>
+
+<ParamField path="body.EDUCATION_R2DBC_USERNAME" type="string" required>
+  Database username passed to Spring R2DBC. Mapped from `EDUCATION_DB_USER`.
+</ParamField>
+
+<ParamField path="body.EDUCATION_R2DBC_PASSWORD" type="string" required>
+  Database password passed to Spring R2DBC. Mapped from `EDUCATION_DB_PASSWORD`.
+</ParamField>
+
+<ParamField path="body.EDUCATION_DB_PORT" type="number" default="5434">
+  Host port exposed by the `postgres-education` container. Also used in the R2DBC URL.
+</ParamField>
+
+<ParamField path="body.EDUCATION_DB_NAME" type="string" default="education_db">
+  PostgreSQL database name created on first startup.
+</ParamField>
+
+<ParamField path="body.EDUCATION_DB_USER" type="string" default="education_user">
+  PostgreSQL superuser for the education database.
+</ParamField>
+
+<ParamField path="body.EDUCATION_DB_PASSWORD" type="string" default="education_password">
+  Password for `EDUCATION_DB_USER`.
+</ParamField>
+
+## Auth service
+
+<ParamField path="body.AUTH_PORT" type="number" required>
+  Host port mapped to the `ms-auth` container's internal port `8082`.
+</ParamField>
+
+<ParamField path="body.AUTH_R2DBC_URL" type="string" required>
+  R2DBC connection URL constructed by Docker Compose:
+
+  ```
+  r2dbc:postgresql://postgres-auth:${AUTH_DB_PORT}/${AUTH_DB_NAME}
+  ```
+</ParamField>
+
+<ParamField path="body.AUTH_R2DBC_USERNAME" type="string" required>
+  Database username passed to Spring R2DBC. Mapped from `AUTH_DB_USER`.
+</ParamField>
+
+<ParamField path="body.AUTH_R2DBC_PASSWORD" type="string" required>
+  Database password passed to Spring R2DBC. Mapped from `AUTH_DB_PASSWORD`.
+</ParamField>
+
+<ParamField path="body.AUTH_DB_PORT" type="number" default="5433">
+  Host port exposed by the `postgres-auth` container.
+</ParamField>
+
+<ParamField path="body.AUTH_DB_NAME" type="string" default="auth_db">
+  PostgreSQL database name for the auth service.
+</ParamField>
+
+<ParamField path="body.AUTH_DB_USER" type="string" default="auth_user">
+  PostgreSQL superuser for the auth database.
+</ParamField>
+
+<ParamField path="body.AUTH_DB_PASSWORD" type="string" default="auth_password">
+  Password for `AUTH_DB_USER`.
+</ParamField>
+
+## Admin service
+
+<ParamField path="body.ADMIN_PORT" type="number" required>
+  Host port mapped to the `ms-admin` container's internal port `8083`.
+</ParamField>
+
+<ParamField path="body.ADMIN_R2DBC_URL" type="string" required>
+  R2DBC connection URL constructed by Docker Compose:
+
+  ```
+  r2dbc:postgresql://postgres-admin:${ADMIN_DB_PORT}/${ADMIN_DB_NAME}
+  ```
+</ParamField>
+
+<ParamField path="body.ADMIN_R2DBC_USERNAME" type="string" required>
+  Database username passed to Spring R2DBC. Mapped from `ADMIN_DB_USER`.
+</ParamField>
+
+<ParamField path="body.ADMIN_R2DBC_PASSWORD" type="string" required>
+  Database password passed to Spring R2DBC. Mapped from `ADMIN_DB_PASSWORD`.
+</ParamField>
+
+<ParamField path="body.ADMIN_DB_PORT" type="number" default="5432">
+  Host port exposed by the `postgres-admin` container.
+</ParamField>
+
+<ParamField path="body.ADMIN_DB_NAME" type="string" default="admin_db">
+  PostgreSQL database name for the admin service.
+</ParamField>
+
+<ParamField path="body.ADMIN_DB_USER" type="string" default="admin_user">
+  PostgreSQL superuser for the admin database.
+</ParamField>
+
+<ParamField path="body.ADMIN_DB_PASSWORD" type="string" default="admin_password">
+  Password for `ADMIN_DB_USER`.
+</ParamField>
+
+## Quick reference table
+
+| Variable | Service | Default | Description |
+|---|---|---|---|
+| `API_GATEWAY_PORT` | api-gateway | — | Host port → container 8080 |
+| `EDUCATION_PORT` | ms-education | — | Host port → container 8081 |
+| `EDUCATION_R2DBC_URL` | ms-education | — | R2DBC connection URL |
+| `EDUCATION_R2DBC_USERNAME` | ms-education | — | DB username (from `EDUCATION_DB_USER`) |
+| `EDUCATION_R2DBC_PASSWORD` | ms-education | — | DB password (from `EDUCATION_DB_PASSWORD`) |
+| `EDUCATION_DB_PORT` | postgres-education | `5434` | Host port for education PostgreSQL |
+| `EDUCATION_DB_NAME` | postgres-education | `education_db` | Database name |
+| `EDUCATION_DB_USER` | postgres-education | `education_user` | Database user |
+| `EDUCATION_DB_PASSWORD` | postgres-education | `education_password` | Database password |
+| `AUTH_PORT` | ms-auth | — | Host port → container 8082 |
+| `AUTH_R2DBC_URL` | ms-auth | — | R2DBC connection URL |
+| `AUTH_R2DBC_USERNAME` | ms-auth | — | DB username (from `AUTH_DB_USER`) |
+| `AUTH_R2DBC_PASSWORD` | ms-auth | — | DB password (from `AUTH_DB_PASSWORD`) |
+| `AUTH_DB_PORT` | postgres-auth | `5433` | Host port for auth PostgreSQL |
+| `AUTH_DB_NAME` | postgres-auth | `auth_db` | Database name |
+| `AUTH_DB_USER` | postgres-auth | `auth_user` | Database user |
+| `AUTH_DB_PASSWORD` | postgres-auth | `auth_password` | Database password |
+| `ADMIN_PORT` | ms-admin | — | Host port → container 8083 |
+| `ADMIN_R2DBC_URL` | ms-admin | — | R2DBC connection URL |
+| `ADMIN_R2DBC_USERNAME` | ms-admin | — | DB username (from `ADMIN_DB_USER`) |
+| `ADMIN_R2DBC_PASSWORD` | ms-admin | — | DB password (from `ADMIN_DB_PASSWORD`) |
+| `ADMIN_DB_PORT` | postgres-admin | `5432` | Host port for admin PostgreSQL |
+| `ADMIN_DB_NAME` | postgres-admin | `admin_db` | Database name |
+| `ADMIN_DB_USER` | postgres-admin | `admin_user` | Database user |
+| `ADMIN_DB_PASSWORD` | postgres-admin | `admin_password` | Database password |

@@ -1,0 +1,116 @@
+---
+title: API overview
+description: Architecture, base URLs, and available endpoints for the GEMS LMS API.
+---
+
+<Note>
+  The GEMS LMS API is under active development. Business endpoints are planned but not yet implemented. The only confirmed endpoints across all services are the Spring Actuator management endpoints documented below.
+</Note>
+
+## Architecture
+
+The GEMS LMS platform is a Java Spring Boot microservices system built with Spring WebFlux (reactive). All external traffic is intended to flow through the **API Gateway**, which acts as the single entry point and routes requests to the appropriate downstream microservice.
+
+```
+Client → API Gateway (:8080) → ms-auth      (:8082)
+                             → ms-education  (:8081)
+                             → ms-admin      (:8083)
+```
+
+Each microservice maintains its own PostgreSQL database and exposes Spring Actuator management endpoints independently.
+
+## Services and ports
+
+| Service | Application name | Container port | Host port (env var) |
+|---|---|---|---|
+| API Gateway | `api-gateway` | 8080 | `${API_GATEWAY_PORT}` |
+| Authentication | `ms-auth` | 8082 | `${AUTH_PORT}` |
+| Education | `ms-education` | 8081 | `${EDUCATION_PORT}` |
+| Admin | `ms-admin` | 8083 | `${ADMIN_PORT}` |
+
+## Base URLs
+
+All services are accessed via environment-variable-configured host ports. In a default local deployment:
+
+| Target | Base URL |
+|---|---|
+| API Gateway (production entry point) | `http://localhost:${API_GATEWAY_PORT}` |
+| Auth service (direct) | `http://localhost:8082` |
+| Education service (direct) | `http://localhost:8081` |
+| Admin service (direct) | `http://localhost:8083` |
+
+<Info>
+  In production, always route requests through the API Gateway rather than accessing microservices directly. Direct service ports are exposed for local development and debugging.
+</Info>
+
+## Spring Actuator endpoints
+
+Every service — including the API Gateway — exposes the following management endpoints. These are the only confirmed implemented endpoints at this stage of development.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/actuator/health` | `GET` | Returns service health status |
+| `/actuator/info` | `GET` | Returns application info |
+| `/actuator/metrics` | `GET` | Returns available metric names |
+
+All three endpoints are enabled via the following configuration present in every service:
+
+```properties
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+The `show-details=when-authorized` setting means the `/actuator/health` response body includes full component-level detail only for authenticated requests. Unauthenticated requests receive a simplified status response.
+
+### Health check example
+
+<CodeGroup>
+
+```bash Gateway
+curl http://localhost:${API_GATEWAY_PORT}/actuator/health
+```
+
+```bash Auth service
+curl http://localhost:8082/actuator/health
+```
+
+```bash Education service
+curl http://localhost:8081/actuator/health
+```
+
+```bash Admin service
+curl http://localhost:8083/actuator/health
+```
+
+</CodeGroup>
+
+Example unauthenticated response:
+
+```json
+{
+  "status": "UP"
+}
+```
+
+## Response format
+
+All services return **JSON** responses. Error responses follow the Spring Boot default `ProblemDetail` / error body format:
+
+```json
+{
+  "timestamp": "2026-01-01T00:00:00.000+00:00",
+  "status": 404,
+  "error": "Not Found",
+  "path": "/api/example"
+}
+```
+
+## Business API status
+
+The business API endpoints for authentication, education, and admin management are **planned** based on each service's domain model and database schema. They are not yet implemented.
+
+| Service | Status | Reference |
+|---|---|---|
+| Authentication | Planned — schema defined | [Auth endpoints](/api/auth/endpoints) |
+| Education | Planned — schema in progress | [Education endpoints](/api/education/endpoints) |
+| Admin | Planned — schema defined | [Admin endpoints](/api/admin/endpoints) |

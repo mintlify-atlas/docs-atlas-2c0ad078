@@ -1,0 +1,194 @@
+---
+title: Education service
+description: Manages educational content, courses, and learning resources for the GEMS LMS platform.
+---
+
+<CardGroup cols={3}>
+  <Card title="Service" icon="server">
+    `ms-education`
+  </Card>
+  <Card title="Port" icon="network">
+    `8081`
+  </Card>
+  <Card title="Base URL" icon="globe">
+    `http://localhost:8081`
+  </Card>
+</CardGroup>
+
+## Overview
+
+`ms-education` owns the educational domain of GEMS LMS — courses, learning resources, and related content. It is built on Spring WebFlux and communicates with PostgreSQL via R2DBC for fully reactive, non-blocking data access. The service follows hexagonal architecture to keep the domain model decoupled from both the HTTP layer and the database layer.
+
+<Note>
+The education domain model is under active development. The database schema is not yet defined — `schema.sql` is currently empty. API surface, entity design, and persistence layer are to be implemented in upcoming iterations.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Reactive database access" icon="bolt">
+    R2DBC with PostgreSQL provides non-blocking I/O throughout the stack.
+  </Card>
+  <Card title="LMS content domain" icon="book">
+    Central service for course management, learning resources, and content delivery.
+  </Card>
+  <Card title="Hexagonal architecture" icon="layers">
+    Domain logic isolated from HTTP and persistence concerns via ports and adapters.
+  </Card>
+  <Card title="Actuator observability" icon="chart-bar">
+    Health, info, and metrics endpoints via Spring Boot Actuator.
+  </Card>
+</CardGroup>
+
+## Technology
+
+| Property | Value |
+|---|---|
+| Spring Boot | 3.4.5 |
+| Java | 24 |
+| Runtime | Spring WebFlux (Netty) |
+| Database driver | R2DBC (reactive, non-blocking) |
+| Database | PostgreSQL |
+| Build tool | Gradle |
+| Java package | `com.gems.education` |
+
+### Module dependencies
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.postgresql:r2dbc-postgresql'
+}
+```
+
+All microservices also inherit `spring-boot-starter-webflux` and `spring-boot-starter` from the root `build.gradle`.
+
+## Main class
+
+```java
+package com.gems.education;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class EducationApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(EducationApplication.class, args);
+  }
+}
+```
+
+`@SpringBootApplication` enables auto-configuration, component scanning across `com.gems.education`, and starts the embedded Netty server.
+
+## Configuration
+
+```properties
+# Server
+server.port=${EDUCATION_PORT}
+spring.application.name=ms-education
+
+# R2DBC (reactive PostgreSQL)
+spring.r2dbc.url=${EDUCATION_R2DBC_URL}
+spring.r2dbc.username=${EDUCATION_R2DBC_USERNAME}
+spring.r2dbc.password=${EDUCATION_R2DBC_PASSWORD}
+
+# Logging
+logging.level.com.gems.education=INFO
+logging.level.org.springframework.web=INFO
+logging.level.org.springframework.r2dbc=DEBUG
+
+# Actuator
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+### Environment variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `EDUCATION_PORT` | Port the service listens on | `8081` |
+| `EDUCATION_R2DBC_URL` | R2DBC connection URL for PostgreSQL | `r2dbc:postgresql://localhost:5432/educationdb` |
+| `EDUCATION_R2DBC_USERNAME` | Database username | `education_user` |
+| `EDUCATION_R2DBC_PASSWORD` | Database password | *(secret)* |
+
+<Warning>
+Never commit database credentials to source control. Supply `EDUCATION_R2DBC_PASSWORD` and other secrets via environment variables, a secrets manager, or Docker Compose environment configuration.
+</Warning>
+
+## Package structure
+
+The service follows hexagonal architecture with the same layering conventions used across all GEMS microservices.
+
+```
+com.gems.education/
+├── EducationApplication.java        # Application entry point
+├── domain/
+│   ├── entities/                    # Core domain objects (e.g. Course, Resource)
+│   ├── exceptions/                  # Domain-specific exceptions
+│   └── values/                      # Value objects
+├── application/
+│   ├── command/                     # Command objects (write operations)
+│   └── gateway/                     # Outbound port interfaces
+└── infrastructure/
+    ├── driving/                     # Inbound adapters (HTTP controllers, WebFlux routes)
+    └── driven/                      # Outbound adapters (R2DBC repositories)
+```
+
+## Database schema
+
+The education database schema is not yet defined. `schema.sql` is currently empty and will be populated as the domain model is designed and implemented.
+
+<Note>
+If you are contributing to the education domain, the schema should be added to `ms-education/src/main/resources/schema.sql`. Follow the `CREATE TABLE IF NOT EXISTS` pattern used in `ms-auth` and `ms-admin` for consistency.
+</Note>
+
+## Health check
+
+```bash
+curl http://localhost:8081/actuator/health
+```
+
+| Endpoint | Path |
+|---|---|
+| Health | `GET /actuator/health` |
+| Info | `GET /actuator/info` |
+| Metrics | `GET /actuator/metrics` |
+
+## Docker build
+
+Uses the same two-stage pattern as other GEMS services:
+
+1. **Build stage** — `eclipse-temurin:24-jdk`: builds the JAR via `./gradlew :ms-education:build -x test`.
+2. **Runtime stage** — `eclipse-temurin:24-jre`: runs the assembled JAR on port `8081`.
+
+```dockerfile
+FROM eclipse-temurin:24-jdk as builder
+WORKDIR /app
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle .
+COPY settings.gradle .
+COPY shared shared
+COPY ms-education ms-education
+RUN chmod +x gradlew
+RUN ./gradlew :ms-education:build -x test
+
+FROM eclipse-temurin:24-jre
+WORKDIR /app
+COPY --from=builder /app/ms-education/build/libs/*.jar app.jar
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+  CMD curl -f http://localhost:8081/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+## Running locally
+
+```bash
+./gradlew :ms-education:bootRun
+```
+
+Ensure the R2DBC environment variables are set and a PostgreSQL instance is reachable before starting.
+
+<Tip>
+Use Docker Compose to start `ms-education` alongside its PostgreSQL database and the API Gateway in a single command. This is the recommended approach for local development and integration testing across the full GEMS LMS stack.
+</Tip>

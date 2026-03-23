@@ -1,80 +1,168 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get the GEMS LMS API platform running locally in minutes using Docker Compose.
 ---
 
-## Get started in three steps
+This guide walks you through cloning the repository, configuring environment variables, and starting all four microservices with a single command.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Check prerequisites">
+    Ensure the following are installed before you begin:
 
-### Step 1: Set up your local environment
+    | Tool | Minimum version | Purpose |
+    | --- | --- | --- |
+    | Java (JDK) | 24 | Required to build and run services locally without Docker |
+    | Docker | 24.x | Container runtime |
+    | Docker Compose | v2 (bundled with Docker Desktop) | Orchestrates all services and databases |
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+      Java 24 is only required if you plan to run services directly with `./gradlew bootRun`. For the Docker Compose path, Docker is sufficient — the multi-stage Dockerfiles build the JARs inside the container using `eclipse-temurin:24-jdk`.
+    </Note>
 
-### Step 2: Deploy your changes
+    Verify your setup:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    java -version
+    docker --version
+    docker compose version
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/your-org/gems-lms-api.git
+    cd gems-lms-api
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    The monorepo contains five Gradle subprojects:
 
-### Step 3: Go live
+    ```
+    gems-lms-api/
+    ├── api-gateway/      # Routes all inbound traffic
+    ├── ms-auth/          # Authentication and user management
+    ├── ms-education/     # Course and content management
+    ├── ms-admin/         # Admin user and platform management
+    └── shared/           # Shared domain types and utilities
+    ```
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Configure environment variables">
+    All services read configuration from environment variables. Create a `.env` file in the project root — Docker Compose and the PowerShell helper scripts both load it automatically.
 
-## Next steps
+    ```bash .env
+    # API Gateway
+    API_GATEWAY_PORT=8080
 
-Now that you have your docs running, explore these key features:
+    # Education microservice
+    EDUCATION_PORT=8081
+    EDUCATION_DB_NAME=education_db
+    EDUCATION_DB_USER=education_user
+    EDUCATION_DB_PASSWORD=education_password
+    EDUCATION_DB_PORT=5434
 
-<CardGroup cols={2}>
+    # Auth microservice
+    AUTH_PORT=8082
+    AUTH_DB_NAME=auth_db
+    AUTH_DB_USER=auth_user
+    AUTH_DB_PASSWORD=auth_password
+    AUTH_DB_PORT=5433
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    # Admin microservice
+    ADMIN_PORT=8083
+    ADMIN_DB_NAME=admin_db
+    ADMIN_DB_USER=admin_user
+    ADMIN_DB_PASSWORD=admin_password
+    ADMIN_DB_PORT=5432
+    ```
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+    <Warning>
+      Never commit the `.env` file to version control. It is already listed in `.gitignore`. Rotate all passwords before deploying to any non-local environment.
+    </Warning>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    Each service constructs its R2DBC connection string at startup from the variables above. For example, `ms-auth` builds:
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    ```
+    r2dbc:postgresql://postgres-auth:${AUTH_DB_PORT}/${AUTH_DB_NAME}
+    ```
 
-</CardGroup>
+    The hostnames (`postgres-auth`, `postgres-education`, `postgres-admin`) are internal Docker network aliases — they are not accessible from outside the `gems-lms-network` bridge network.
+  </Step>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+  <Step title="Start all services with Docker Compose">
+    Build images and start all services in detached mode:
+
+    ```bash
+    docker compose up -d
+    ```
+
+    On first run, Docker builds all four service images using multi-stage builds (`eclipse-temurin:24-jdk` for the build stage, `eclipse-temurin:24-jre` for the runtime stage). Subsequent starts reuse the cached images and are much faster.
+
+    <CodeGroup>
+
+    ```bash Start (detached)
+    docker compose up -d
+    ```
+
+    ```bash Start with rebuild
+    docker compose up -d --build
+    ```
+
+    ```bash Stop all services
+    docker compose down
+    ```
+
+    ```bash Stop and remove volumes
+    docker compose down -v
+    ```
+
+    </CodeGroup>
+
+    Docker Compose respects startup order: each microservice waits for its database container to pass the `pg_isready` healthcheck before starting. The `api-gateway` starts last, after all three microservices are running.
+
+    <Tip>
+      On Windows, you can also use the included PowerShell scripts to run services directly with Gradle (no Docker required): `./start-all-microservices.ps1` starts each service in a separate terminal window. `./stop-all-microservices.ps1` kills all processes on the configured ports.
+    </Tip>
+  </Step>
+
+  <Step title="Verify all services are healthy">
+    Each service exposes a Spring Boot Actuator health endpoint. Poll them to confirm a successful startup:
+
+    <CodeGroup>
+
+    ```bash API gateway (port 8080)
+    curl http://localhost:8080/actuator/health
+    ```
+
+    ```bash Education service (port 8081)
+    curl http://localhost:8081/actuator/health
+    ```
+
+    ```bash Auth service (port 8082)
+    curl http://localhost:8082/actuator/health
+    ```
+
+    ```bash Admin service (port 8083)
+    curl http://localhost:8083/actuator/health
+    ```
+
+    </CodeGroup>
+
+    A healthy service responds with:
+
+    ```json
+    {"status":"UP"}
+    ```
+
+    You can also inspect container health status from Docker:
+
+    ```bash
+    docker compose ps
+    ```
+
+    All four service containers (`gems-api-gateway`, `gems-ms-education`, `gems-ms-auth`, `gems-ms-admin`) should show `healthy` in the `STATUS` column. Containers restart automatically (`restart: unless-stopped`) if they crash.
+
+    <Note>
+      Services have a 40-second `start_period` before Docker begins health checks. If containers appear unhealthy immediately after start, wait a moment and check again with `docker compose ps`.
+    </Note>
+  </Step>
+</Steps>

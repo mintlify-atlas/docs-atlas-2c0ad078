@@ -1,0 +1,204 @@
+---
+title: Health checks and monitoring
+description: Spring Actuator endpoints, Docker Compose health check configuration, and monitoring commands for the GEMS LMS stack.
+---
+
+Every GEMS LMS service exposes Spring Boot Actuator endpoints and is monitored by Docker Compose health checks. The stack is designed so that dependent services only start after their upstream dependencies are confirmed healthy.
+
+## Spring Actuator endpoints
+
+All four application services expose the same set of Actuator endpoints, configured in each service's `application.properties`:
+
+```properties
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+The `when-authorized` setting means that unauthenticated requests to `/actuator/health` receive a compact status response (`{"status":"UP"}`), while authenticated requests receive the full component breakdown.
+
+### Endpoint URLs
+
+<Columns cols={2}>
+  <Card title="API gateway" icon="globe">
+    ```
+    http://localhost:{API_GATEWAY_PORT}/actuator/health
+    http://localhost:{API_GATEWAY_PORT}/actuator/info
+    http://localhost:{API_GATEWAY_PORT}/actuator/metrics
+    ```
+  </Card>
+  <Card title="Education service" icon="book-open">
+    ```
+    http://localhost:{EDUCATION_PORT}/actuator/health
+    http://localhost:{EDUCATION_PORT}/actuator/info
+    http://localhost:{EDUCATION_PORT}/actuator/metrics
+    ```
+  </Card>
+  <Card title="Auth service" icon="lock">
+    ```
+    http://localhost:{AUTH_PORT}/actuator/health
+    http://localhost:{AUTH_PORT}/actuator/info
+    http://localhost:{AUTH_PORT}/actuator/metrics
+    ```
+  </Card>
+  <Card title="Admin service" icon="shield">
+    ```
+    http://localhost:{ADMIN_PORT}/actuator/health
+    http://localhost:{ADMIN_PORT}/actuator/info
+    http://localhost:{ADMIN_PORT}/actuator/metrics
+    ```
+  </Card>
+</Columns>
+
+### Curl examples
+
+Replace the port values with those defined in your `.env` file.
+
+```bash
+# API gateway (default port 8080)
+curl http://localhost:8080/actuator/health
+
+# Education service (default port 8081)
+curl http://localhost:8081/actuator/health
+
+# Auth service (default port 8082)
+curl http://localhost:8082/actuator/health
+
+# Admin service (default port 8083)
+curl http://localhost:8083/actuator/health
+```
+
+A healthy service returns:
+
+```json
+{"status":"UP"}
+```
+
+## Docker Compose health checks
+
+Docker Compose defines separate health check configurations for application services and PostgreSQL databases.
+
+### Application services
+
+All four application services (`api-gateway`, `ms-education`, `ms-auth`, `ms-admin`) share this health check configuration:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:<port>/actuator/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+```
+
+| Parameter | Value | Description |
+|---|---|---|
+| `interval` | `30s` | Time between health check attempts |
+| `timeout` | `10s` | Maximum time allowed for each check |
+| `retries` | `3` | Consecutive failures before marking unhealthy |
+| `start_period` | `40s` | Grace period after container start before failures count |
+
+The `start_period` of 40 seconds gives the JVM time to start and the Spring context time to initialize before health checks begin counting failures.
+
+### PostgreSQL databases
+
+The three PostgreSQL containers use `pg_isready` for faster, lighter health checks:
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+```
+
+| Parameter | Value | Description |
+|---|---|---|
+| `interval` | `10s` | More frequent checks — databases start faster |
+| `timeout` | `5s` | Maximum time for each check |
+| `retries` | `5` | Consecutive failures before marking unhealthy |
+
+`pg_isready` exits `0` when the PostgreSQL server is accepting connections. Each service uses its own user and database name in the check:
+
+| Container | Health check command |
+|---|---|
+| `postgres-admin` | `pg_isready -U admin_user -d admin_db` |
+| `postgres-auth` | `pg_isready -U auth_user -d auth_db` |
+| `postgres-education` | `pg_isready -U education_user -d education_db` |
+
+### Startup dependency order
+
+Application services declare `condition: service_healthy` on their database dependency. This means Docker Compose will not start `ms-education` until `postgres-education` passes its health check, and will not start `api-gateway` until all three application services are running.
+
+```yaml
+depends_on:
+  postgres-education:
+    condition: service_healthy
+```
+
+<Note>
+The `api-gateway` uses a simple `depends_on` list (without `condition: service_healthy`) for the microservices. This means Docker starts the microservice containers before the gateway, but does not wait for their health checks to pass. Verify microservice health independently after startup if needed.
+</Note>
+
+## Checking service status
+
+### List container states
+
+```bash
+docker compose ps
+```
+
+Example output:
+
+```
+NAME                    IMAGE                  STATUS
+gems-api-gateway        gems-lms-api-api-...   Up (healthy)
+gems-ms-education       gems-lms-api-ms-...    Up (healthy)
+gems-ms-auth            gems-lms-api-ms-...    Up (healthy)
+gems-ms-admin           gems-lms-api-ms-...    Up (healthy)
+gems-postgres-admin     postgres:16            Up (healthy)
+gems-postgres-auth      postgres:16            Up (healthy)
+gems-postgres-education postgres:16            Up (healthy)
+```
+
+### Inspect health check details
+
+Use `docker inspect` to see the full health check history for a container:
+
+```bash
+# View health status and last check output
+docker inspect --format='{{json .State.Health}}' gems-api-gateway | jq .
+
+# Check a specific microservice
+docker inspect --format='{{json .State.Health}}' gems-ms-education | jq .
+```
+
+The output includes `Status` (`healthy`, `unhealthy`, or `starting`), `FailingStreak`, and the log of recent check attempts with their exit codes and output.
+
+## Monitoring
+
+### Stream logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Single service
+docker compose logs -f ms-auth
+
+# Last 100 lines then follow
+docker compose logs -f --tail=100 ms-education
+```
+
+### Resource usage
+
+```bash
+# Live CPU and memory stats for all containers
+docker stats
+
+# Stats for GEMS containers only
+docker stats gems-api-gateway gems-ms-education gems-ms-auth gems-ms-admin
+```
+
+### Restart policy
+
+All services are configured with `restart: unless-stopped`. Containers automatically restart after a crash or Docker daemon restart, but remain stopped if you explicitly run `docker compose stop` or `docker compose down`.

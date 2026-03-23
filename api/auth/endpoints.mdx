@@ -1,0 +1,293 @@
+---
+title: Authentication endpoints
+description: Spring Actuator endpoints and planned user authentication API for ms-auth.
+---
+
+<Note>
+  The `ms-auth` service is in early development. The Actuator endpoints below are confirmed and available now. The user management and authentication endpoints are **planned** based on the `users` database schema and are not yet implemented.
+</Note>
+
+## Actuator endpoints
+
+These endpoints are confirmed implemented and available at `http://localhost:8082` (or via the API Gateway at `http://localhost:${API_GATEWAY_PORT}`).
+
+### GET /actuator/health
+
+Returns the health status of the auth service.
+
+The response detail level depends on authorization. Unauthenticated requests return a simplified status. This is controlled by `management.endpoint.health.show-details=when-authorized`.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8082/actuator/health
+```
+
+```json Response (unauthenticated)
+{
+  "status": "UP"
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/info
+
+Returns application information for the auth service.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8082/actuator/info
+```
+
+```json Response
+{
+  "app": {
+    "name": "ms-auth"
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/metrics
+
+Returns a list of available metric names.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8082/actuator/metrics
+```
+
+```json Response
+{
+  "names": [
+    "jvm.memory.used",
+    "jvm.memory.max",
+    "http.server.requests",
+    "process.uptime"
+  ]
+}
+```
+
+</CodeGroup>
+
+---
+
+## Planned user endpoints
+
+<Warning>
+  The following endpoints are **not yet implemented**. They are documented here as planned endpoints based on the `users` table schema in `ms-auth/src/main/resources/schema.sql`. Paths, request bodies, and response shapes may change during implementation.
+</Warning>
+
+The `users` table schema that drives these planned endpoints:
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+    user_id    BIGSERIAL PRIMARY KEY,
+    username   VARCHAR(50)  UNIQUE NOT NULL,
+    email      VARCHAR(100) UNIQUE NOT NULL,
+    password   VARCHAR(255) NOT NULL,
+    first_name VARCHAR(50)  NOT NULL,
+    last_name  VARCHAR(50)  NOT NULL,
+    is_active  BOOLEAN      NOT NULL DEFAULT true,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+### POST /api/auth/register
+
+Register a new user account.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  Unique username. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Unique email address. Maximum 100 characters.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Will be stored hashed.
+</ParamField>
+
+<ParamField body="first_name" type="string" required>
+  User's first name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="last_name" type="string" required>
+  User's last name. Maximum 50 characters.
+</ParamField>
+
+**Response — 201 Created**
+
+<ResponseField name="user_id" type="number">
+  Auto-generated unique user identifier.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The registered username.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The registered email address.
+</ResponseField>
+
+<ResponseField name="first_name" type="string">
+  User's first name.
+</ResponseField>
+
+<ResponseField name="last_name" type="string">
+  User's last name.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Account active status. Defaults to `true` on creation.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of account creation.
+</ResponseField>
+
+---
+
+### POST /api/auth/login
+
+Authenticate a user and receive an access token.
+
+**Request body**
+
+<ParamField body="username" type="string">
+  The user's username. Provide either `username` or `email`.
+</ParamField>
+
+<ParamField body="email" type="string">
+  The user's email address. Provide either `username` or `email`.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's password.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="token" type="string">
+  Access token for authenticating subsequent requests.
+</ResponseField>
+
+<ResponseField name="user_id" type="number">
+  The authenticated user's ID.
+</ResponseField>
+
+---
+
+### GET /api/auth/users/{userId}
+
+Retrieve a user by their ID.
+
+**Path parameters**
+
+<ParamField path="userId" type="number" required>
+  The unique ID of the user (`user_id` column).
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="user_id" type="number">
+  Unique user identifier.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The user's username.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The user's email address.
+</ResponseField>
+
+<ResponseField name="first_name" type="string">
+  User's first name.
+</ResponseField>
+
+<ResponseField name="last_name" type="string">
+  User's last name.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Whether the account is currently active.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of account creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of last update.
+</ResponseField>
+
+---
+
+### PUT /api/auth/users/{userId}
+
+Update a user's profile information.
+
+**Path parameters**
+
+<ParamField path="userId" type="number" required>
+  The unique ID of the user to update.
+</ParamField>
+
+**Request body**
+
+<ParamField body="first_name" type="string">
+  Updated first name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="last_name" type="string">
+  Updated last name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Updated email address. Must remain unique. Maximum 100 characters.
+</ParamField>
+
+<ParamField body="password" type="string">
+  New password. Will be stored hashed.
+</ParamField>
+
+**Response — 200 OK**
+
+Returns the updated user object. See [GET /api/auth/users/{userId}](#get-apiauthusers-userid) for the response shape.
+
+---
+
+### DELETE /api/auth/users/{userId}
+
+Deactivate a user account. Sets `is_active` to `false`; does not permanently delete the record.
+
+**Path parameters**
+
+<ParamField path="userId" type="number" required>
+  The unique ID of the user to deactivate.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="user_id" type="number">
+  ID of the deactivated user.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Will be `false` after successful deactivation.
+</ResponseField>

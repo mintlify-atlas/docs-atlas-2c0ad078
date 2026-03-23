@@ -1,0 +1,336 @@
+---
+title: Admin endpoints
+description: Spring Actuator endpoints and planned admin user management API for ms-admin.
+---
+
+<Note>
+  The `ms-admin` service is in early development. The Actuator endpoints below are confirmed and available now. The admin user management endpoints are **planned** based on the `admin_users` database schema and are not yet implemented.
+</Note>
+
+## Actuator endpoints
+
+These endpoints are confirmed implemented and available at `http://localhost:8083` (or via the API Gateway at `http://localhost:${API_GATEWAY_PORT}`).
+
+### GET /actuator/health
+
+Returns the health status of the admin service.
+
+The response detail level depends on authorization, controlled by `management.endpoint.health.show-details=when-authorized`.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8083/actuator/health
+```
+
+```json Response (unauthenticated)
+{
+  "status": "UP"
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/info
+
+Returns application information for the admin service.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8083/actuator/info
+```
+
+```json Response
+{
+  "app": {
+    "name": "ms-admin"
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/metrics
+
+Returns a list of available metric names.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8083/actuator/metrics
+```
+
+```json Response
+{
+  "names": [
+    "jvm.memory.used",
+    "jvm.memory.max",
+    "http.server.requests",
+    "process.uptime"
+  ]
+}
+```
+
+</CodeGroup>
+
+---
+
+## Planned admin user endpoints
+
+<Warning>
+  The following endpoints are **not yet implemented**. They are documented here as planned endpoints based on the `admin_users` table schema in `ms-admin/src/main/resources/schema.sql`. Paths, request bodies, and response shapes may change during implementation.
+</Warning>
+
+The `admin_users` table schema that drives these planned endpoints:
+
+```sql
+CREATE TABLE IF NOT EXISTS admin_users (
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(50)  UNIQUE NOT NULL,
+    email         VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name    VARCHAR(50)  NOT NULL,
+    last_name     VARCHAR(50)  NOT NULL,
+    role          VARCHAR(20)  NOT NULL DEFAULT 'ADMIN',
+    is_active     BOOLEAN      NOT NULL DEFAULT true,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+### GET /api/admin/users
+
+List all admin users.
+
+**Query parameters**
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page number for pagination.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of users to return per page.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="content" type="object[]">
+  Array of admin user objects.
+  <Expandable title="admin user properties">
+    <ResponseField name="id" type="number">
+      Unique admin user identifier.
+    </ResponseField>
+    <ResponseField name="username" type="string">
+      The admin user's username.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      The admin user's email address.
+    </ResponseField>
+    <ResponseField name="first_name" type="string">
+      Admin user's first name.
+    </ResponseField>
+    <ResponseField name="last_name" type="string">
+      Admin user's last name.
+    </ResponseField>
+    <ResponseField name="role" type="string">
+      The admin user's role. Defaults to `ADMIN`.
+    </ResponseField>
+    <ResponseField name="is_active" type="boolean">
+      Whether the account is currently active.
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp of account creation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="totalElements" type="number">
+  Total number of admin users across all pages.
+</ResponseField>
+
+<ResponseField name="totalPages" type="number">
+  Total number of pages.
+</ResponseField>
+
+---
+
+### POST /api/admin/users
+
+Create a new admin user.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  Unique username. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Unique email address. Maximum 100 characters.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Will be stored as `password_hash`.
+</ParamField>
+
+<ParamField body="first_name" type="string" required>
+  Admin user's first name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="last_name" type="string" required>
+  Admin user's last name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="role" type="string" default="ADMIN">
+  The admin role to assign. Defaults to `ADMIN`. Maximum 20 characters.
+</ParamField>
+
+**Response — 201 Created**
+
+<ResponseField name="id" type="number">
+  Auto-generated unique admin user identifier.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The registered username.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The registered email address.
+</ResponseField>
+
+<ResponseField name="first_name" type="string">
+  Admin user's first name.
+</ResponseField>
+
+<ResponseField name="last_name" type="string">
+  Admin user's last name.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The assigned role. Defaults to `ADMIN`.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Account active status. Defaults to `true` on creation.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of account creation.
+</ResponseField>
+
+---
+
+### GET /api/admin/users/{id}
+
+Retrieve an admin user by ID.
+
+**Path parameters**
+
+<ParamField path="id" type="number" required>
+  The unique ID of the admin user (`id` column).
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="id" type="number">
+  Unique admin user identifier.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  The admin user's username.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The admin user's email address.
+</ResponseField>
+
+<ResponseField name="first_name" type="string">
+  Admin user's first name.
+</ResponseField>
+
+<ResponseField name="last_name" type="string">
+  Admin user's last name.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The admin user's role.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Whether the account is currently active.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of account creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of last update.
+</ResponseField>
+
+---
+
+### PUT /api/admin/users/{id}
+
+Update an admin user's details.
+
+**Path parameters**
+
+<ParamField path="id" type="number" required>
+  The unique ID of the admin user to update.
+</ParamField>
+
+**Request body**
+
+<ParamField body="first_name" type="string">
+  Updated first name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="last_name" type="string">
+  Updated last name. Maximum 50 characters.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Updated email address. Must remain unique. Maximum 100 characters.
+</ParamField>
+
+<ParamField body="password" type="string">
+  New password. Will be stored as `password_hash`.
+</ParamField>
+
+<ParamField body="role" type="string">
+  Updated role assignment. Maximum 20 characters.
+</ParamField>
+
+**Response — 200 OK**
+
+Returns the updated admin user object. See [GET /api/admin/users/{id}](#get-apiadminusersid) for the response shape.
+
+---
+
+### DELETE /api/admin/users/{id}
+
+Deactivate an admin user account. Sets `is_active` to `false`; does not permanently delete the record.
+
+**Path parameters**
+
+<ParamField path="id" type="number" required>
+  The unique ID of the admin user to deactivate.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="id" type="number">
+  ID of the deactivated admin user.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Will be `false` after successful deactivation.
+</ResponseField>

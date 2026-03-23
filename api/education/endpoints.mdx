@@ -1,0 +1,241 @@
+---
+title: Education endpoints
+description: Spring Actuator endpoints and planned course management API for ms-education.
+---
+
+<Note>
+  The `ms-education` service is in early development. The Actuator endpoints below are confirmed and available now. The course management endpoints are **planned** based on the LMS domain model. The education database schema has not yet been defined — the `schema.sql` file is currently empty.
+</Note>
+
+## Actuator endpoints
+
+These endpoints are confirmed implemented and available at `http://localhost:8081` (or via the API Gateway at `http://localhost:${API_GATEWAY_PORT}`).
+
+### GET /actuator/health
+
+Returns the health status of the education service.
+
+The response detail level depends on authorization, controlled by `management.endpoint.health.show-details=when-authorized`.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8081/actuator/health
+```
+
+```json Response (unauthenticated)
+{
+  "status": "UP"
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/info
+
+Returns application information for the education service.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8081/actuator/info
+```
+
+```json Response
+{
+  "app": {
+    "name": "ms-education"
+  }
+}
+```
+
+</CodeGroup>
+
+---
+
+### GET /actuator/metrics
+
+Returns a list of available metric names.
+
+<CodeGroup>
+
+```bash Request
+curl http://localhost:8081/actuator/metrics
+```
+
+```json Response
+{
+  "names": [
+    "jvm.memory.used",
+    "jvm.memory.max",
+    "http.server.requests",
+    "process.uptime"
+  ]
+}
+```
+
+</CodeGroup>
+
+---
+
+## Planned course endpoints
+
+<Warning>
+  The following endpoints are **not yet implemented**. The education service schema is currently empty (`schema.sql` contains no table definitions). These endpoints are documented as planned based on the LMS domain model. All paths, request bodies, and response shapes are subject to change.
+</Warning>
+
+---
+
+### GET /api/education/courses
+
+List all available courses.
+
+**Query parameters**
+
+<ParamField query="page" type="number" default="0">
+  Zero-based page number for pagination.
+</ParamField>
+
+<ParamField query="size" type="number" default="20">
+  Number of courses to return per page.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="content" type="object[]">
+  Array of course objects.
+  <Expandable title="course properties">
+    <ResponseField name="courseId" type="number">
+      Unique course identifier.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Course title.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Course description.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of course creation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="totalElements" type="number">
+  Total number of courses across all pages.
+</ResponseField>
+
+<ResponseField name="totalPages" type="number">
+  Total number of pages.
+</ResponseField>
+
+---
+
+### POST /api/education/courses
+
+Create a new course.
+
+**Request body**
+
+<ParamField body="title" type="string" required>
+  Course title.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Course description.
+</ParamField>
+
+**Response — 201 Created**
+
+<ResponseField name="courseId" type="number">
+  Auto-generated unique course identifier.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  The course title.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  The course description.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+---
+
+### GET /api/education/courses/{courseId}
+
+Retrieve a single course by ID.
+
+**Path parameters**
+
+<ParamField path="courseId" type="number" required>
+  The unique ID of the course.
+</ParamField>
+
+**Response — 200 OK**
+
+<ResponseField name="courseId" type="number">
+  Unique course identifier.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Course title.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Course description.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of course creation.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string">
+  ISO 8601 timestamp of last update.
+</ResponseField>
+
+---
+
+### PUT /api/education/courses/{courseId}
+
+Update an existing course.
+
+**Path parameters**
+
+<ParamField path="courseId" type="number" required>
+  The unique ID of the course to update.
+</ParamField>
+
+**Request body**
+
+<ParamField body="title" type="string">
+  Updated course title.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated course description.
+</ParamField>
+
+**Response — 200 OK**
+
+Returns the updated course object. See [GET /api/education/courses/{courseId}](#get-apieducationcoursescourseid) for the response shape.
+
+---
+
+### DELETE /api/education/courses/{courseId}
+
+Delete a course.
+
+**Path parameters**
+
+<ParamField path="courseId" type="number" required>
+  The unique ID of the course to delete.
+</ParamField>
+
+**Response — 204 No Content**
+
+No response body on success.

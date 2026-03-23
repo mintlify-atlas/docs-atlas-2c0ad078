@@ -1,0 +1,123 @@
+---
+title: Database Schema
+description: PostgreSQL schema definitions for each GEMS LMS microservice database.
+---
+
+Each GEMS LMS microservice owns its own isolated PostgreSQL 16 database. This database-per-service pattern ensures that services are independently deployable, that schema changes in one domain cannot break another, and that each service's data model can evolve at its own pace.
+
+<Note>
+  Schema initialization uses `CREATE TABLE IF NOT EXISTS` throughout, making every migration idempotent. Restarting a service or re-running the schema file will never destroy existing data or produce duplicate-table errors.
+</Note>
+
+## Databases at a glance
+
+| Service | Database | Host (Docker) | Default Port |
+|---|---|---|---|
+| ms-auth | `auth_db` | `postgres-auth` | `5433` |
+| ms-admin | `admin_db` | `postgres-admin` | `5432` |
+| ms-education | `education_db` | `postgres-education` | `5434` |
+
+---
+
+## ms-auth — `auth_db`
+
+Stores end-user identity and credentials for the authentication service.
+
+### `users` table
+
+```sql
+-- Auth Database Schema
+CREATE TABLE IF NOT EXISTS users (
+    user_id    BIGSERIAL PRIMARY KEY,
+    username   VARCHAR(50)  UNIQUE NOT NULL,
+    email      VARCHAR(100) UNIQUE NOT NULL,
+    password   VARCHAR(255) NOT NULL,
+    first_name VARCHAR(50)  NOT NULL,
+    last_name  VARCHAR(50)  NOT NULL,
+    is_active  BOOLEAN      NOT NULL DEFAULT true,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `user_id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing surrogate key. |
+| `username` | `VARCHAR(50)` | `UNIQUE NOT NULL` | Login handle. Must be unique across all users. |
+| `email` | `VARCHAR(100)` | `UNIQUE NOT NULL` | Contact email. Must be unique across all users. |
+| `password` | `VARCHAR(255)` | `NOT NULL` | **BCrypt hash** of the user's password — never stored as plain text. |
+| `first_name` | `VARCHAR(50)` | `NOT NULL` | Given name. |
+| `last_name` | `VARCHAR(50)` | `NOT NULL` | Family name. |
+| `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Soft-delete / account suspension flag. |
+| `created_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | Row creation time, set automatically. |
+| `updated_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | Last modification time; updated by application logic. |
+
+<Warning>
+  The `password` column stores a **hashed** value only. The authentication service never persists or logs a plain-text password. Treat the column as opaque at the database level.
+</Warning>
+
+**Unique constraints**: `username`, `email`
+
+---
+
+## ms-admin — `admin_db`
+
+Stores administrator accounts that are managed separately from regular end-users.
+
+### `admin_users` table
+
+```sql
+-- Admin Database Schema
+CREATE TABLE IF NOT EXISTS admin_users (
+    id            BIGSERIAL    PRIMARY KEY,
+    username      VARCHAR(50)  UNIQUE NOT NULL,
+    email         VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name    VARCHAR(50)  NOT NULL,
+    last_name     VARCHAR(50)  NOT NULL,
+    role          VARCHAR(20)  NOT NULL DEFAULT 'ADMIN',
+    is_active     BOOLEAN      NOT NULL DEFAULT true,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing surrogate key. |
+| `username` | `VARCHAR(50)` | `UNIQUE NOT NULL` | Admin login handle. |
+| `email` | `VARCHAR(100)` | `UNIQUE NOT NULL` | Admin contact email. |
+| `password_hash` | `VARCHAR(255)` | `NOT NULL` | Hashed credential. The explicit `_hash` suffix signals that plain-text storage is prohibited. |
+| `first_name` | `VARCHAR(50)` | `NOT NULL` | Given name. |
+| `last_name` | `VARCHAR(50)` | `NOT NULL` | Family name. |
+| `role` | `VARCHAR(20)` | `NOT NULL DEFAULT 'ADMIN'` | Authorization role. Defaults to `ADMIN`; can be extended to support finer-grained roles (e.g., `SUPER_ADMIN`). |
+| `is_active` | `BOOLEAN` | `NOT NULL DEFAULT true` | Account activation flag for soft-disabling admins without deleting the row. |
+| `created_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | Row creation time, set automatically. |
+| `updated_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP` | Last modification time; updated by application logic. |
+
+**Unique constraints**: `username`, `email`
+
+---
+
+## ms-education — `education_db`
+
+The education service database is provisioned and connected but its schema is currently empty — the domain model for courses, enrollments, and related entities is under active development.
+
+```sql
+-- education_db schema.sql is currently empty (placeholder)
+```
+
+<Note>
+  The `postgres-education` container and the `education_db` database are fully operational. The empty `schema.sql` simply means no application tables have been defined yet. Schema objects will be added here as the education domain model is implemented.
+</Note>
+
+---
+
+## Schema initialization pattern
+
+All schema files use `CREATE TABLE IF NOT EXISTS`, which provides two important guarantees:
+
+1. **Idempotency** — The same SQL can be executed any number of times without error. Redeploying a service or restarting a container does not risk dropping or duplicating tables.
+2. **Safe cold starts** — On a fresh deployment, the schema is created. On a warm restart against an existing volume, the statement is a no-op.
+
+R2DBC reads the `schema.sql` file from the classpath at application startup and executes it against the configured database before the service begins accepting requests.

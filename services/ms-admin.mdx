@@ -1,0 +1,220 @@
+---
+title: Admin service
+description: Manages platform administration, admin users, and system configuration for GEMS LMS.
+---
+
+<CardGroup cols={3}>
+  <Card title="Service" icon="server">
+    `ms-admin`
+  </Card>
+  <Card title="Port" icon="network">
+    `8083`
+  </Card>
+  <Card title="Base URL" icon="globe">
+    `http://localhost:8083`
+  </Card>
+</CardGroup>
+
+## Overview
+
+`ms-admin` handles platform administration for GEMS LMS — managing admin user accounts, roles, and system-level configuration. It is the operational control plane for the platform and is intentionally separate from `ms-auth`, which manages end-user identity. Like the other GEMS microservices, it is built on Spring WebFlux with reactive PostgreSQL access via R2DBC.
+
+<CardGroup cols={2}>
+  <Card title="Reactive database access" icon="bolt">
+    R2DBC with PostgreSQL provides non-blocking I/O from request handling through to persistence.
+  </Card>
+  <Card title="Admin identity ownership" icon="shield">
+    Sole source of truth for admin user accounts, roles, and active status.
+  </Card>
+  <Card title="Hexagonal architecture" icon="layers">
+    Domain logic decoupled from HTTP and persistence via ports and adapters.
+  </Card>
+  <Card title="Actuator observability" icon="chart-bar">
+    Health, info, and metrics endpoints via Spring Boot Actuator.
+  </Card>
+</CardGroup>
+
+## Technology
+
+| Property | Value |
+|---|---|
+| Spring Boot | 3.4.5 |
+| Java | 24 |
+| Runtime | Spring WebFlux (Netty) |
+| Database driver | R2DBC (reactive, non-blocking) |
+| Database | PostgreSQL |
+| Build tool | Gradle |
+| Java package | `com.gems.admin` |
+
+### Module dependencies
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.postgresql:r2dbc-postgresql'
+}
+```
+
+All microservices also inherit `spring-boot-starter-webflux` and `spring-boot-starter` from the root `build.gradle`.
+
+## Main class
+
+```java
+package com.gems.admin;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class AdminApplication {
+  public static void main(String[] args) {
+    SpringApplication.run(AdminApplication.class, args);
+  }
+}
+```
+
+`@SpringBootApplication` enables auto-configuration, component scanning across `com.gems.admin`, and starts the embedded Netty server.
+
+## Configuration
+
+```properties
+# Server
+server.port=${ADMIN_PORT}
+spring.application.name=ms-admin
+
+# R2DBC (reactive PostgreSQL)
+spring.r2dbc.url=${ADMIN_R2DBC_URL}
+spring.r2dbc.username=${ADMIN_R2DBC_USERNAME}
+spring.r2dbc.password=${ADMIN_R2DBC_PASSWORD}
+
+# Logging
+logging.level.com.gems.admin=INFO
+logging.level.org.springframework.web=INFO
+logging.level.org.springframework.r2dbc=DEBUG
+
+# Actuator
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.show-details=when-authorized
+```
+
+### Environment variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `ADMIN_PORT` | Port the service listens on | `8083` |
+| `ADMIN_R2DBC_URL` | R2DBC connection URL for PostgreSQL | `r2dbc:postgresql://localhost:5432/admindb` |
+| `ADMIN_R2DBC_USERNAME` | Database username | `admin_user` |
+| `ADMIN_R2DBC_PASSWORD` | Database password | *(secret)* |
+
+<Warning>
+Never commit database credentials to source control. Supply `ADMIN_R2DBC_PASSWORD` and other secrets via environment variables, a secrets manager, or Docker Compose environment configuration.
+</Warning>
+
+## Package structure
+
+The service follows hexagonal architecture with the same layering conventions used across all GEMS microservices.
+
+```
+com.gems.admin/
+├── AdminApplication.java            # Application entry point
+├── domain/
+│   ├── entities/                    # Core domain objects (e.g. AdminUser)
+│   ├── exceptions/                  # Domain-specific exceptions
+│   └── values/                      # Value objects
+├── application/
+│   ├── command/                     # Command objects (write operations)
+│   └── gateway/                     # Outbound port interfaces
+└── infrastructure/
+    ├── driving/                     # Inbound adapters (HTTP controllers, WebFlux routes)
+    └── driven/                      # Outbound adapters (R2DBC repositories)
+```
+
+## Database schema
+
+The `admin_users` table is the primary entity managed by `ms-admin`. It is initialized via `schema.sql` on startup.
+
+```sql
+CREATE TABLE IF NOT EXISTS admin_users (
+    id            BIGSERIAL    PRIMARY KEY,
+    username      VARCHAR(50)  UNIQUE NOT NULL,
+    email         VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name    VARCHAR(50)  NOT NULL,
+    last_name     VARCHAR(50)  NOT NULL,
+    role          VARCHAR(20)  NOT NULL DEFAULT 'ADMIN',
+    is_active     BOOLEAN      NOT NULL DEFAULT true,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Column reference
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | Primary key | Auto-incrementing admin user identifier |
+| `username` | `VARCHAR(50)` | Unique, not null | Login username |
+| `email` | `VARCHAR(100)` | Unique, not null | Email address |
+| `password_hash` | `VARCHAR(255)` | Not null | Hashed password |
+| `first_name` | `VARCHAR(50)` | Not null | Given name |
+| `last_name` | `VARCHAR(50)` | Not null | Family name |
+| `role` | `VARCHAR(20)` | Not null, default `'ADMIN'` | Administrative role |
+| `is_active` | `BOOLEAN` | Default `true` | Account active flag |
+| `created_at` | `TIMESTAMP` | Default now | Record creation timestamp |
+| `updated_at` | `TIMESTAMP` | Default now | Last update timestamp |
+
+<Note>
+The `password_hash` column name (versus `password` in `ms-auth`) reflects that admin passwords are stored as hashes. Ensure your implementation hashes credentials before persistence.
+</Note>
+
+## Health check
+
+```bash
+curl http://localhost:8083/actuator/health
+```
+
+| Endpoint | Path |
+|---|---|
+| Health | `GET /actuator/health` |
+| Info | `GET /actuator/info` |
+| Metrics | `GET /actuator/metrics` |
+
+## Docker build
+
+Uses the same two-stage pattern as other GEMS services:
+
+1. **Build stage** — `eclipse-temurin:24-jdk`: builds the JAR via `./gradlew :ms-admin:build -x test`.
+2. **Runtime stage** — `eclipse-temurin:24-jre`: runs the assembled JAR on port `8083`.
+
+```dockerfile
+FROM eclipse-temurin:24-jdk as builder
+WORKDIR /app
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle .
+COPY settings.gradle .
+COPY shared shared
+COPY ms-admin ms-admin
+RUN chmod +x gradlew
+RUN ./gradlew :ms-admin:build -x test
+
+FROM eclipse-temurin:24-jre
+WORKDIR /app
+COPY --from=builder /app/ms-admin/build/libs/*.jar app.jar
+EXPOSE 8083
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+  CMD curl -f http://localhost:8083/actuator/health || exit 1
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+## Running locally
+
+```bash
+./gradlew :ms-admin:bootRun
+```
+
+Ensure the R2DBC environment variables are set and a PostgreSQL instance is reachable before starting.
+
+<Tip>
+Use Docker Compose to start `ms-admin` alongside its PostgreSQL database and the API Gateway in a single command. This is the recommended approach for local development and integration testing across the full GEMS LMS stack.
+</Tip>
