@@ -38,20 +38,39 @@ All containers communicate over the `gems-lms-network` bridge network. Only the 
   </Step>
 
   <Step title="Create your .env file">
-    Copy the example environment file and set values appropriate for your environment. See [Configuration](/deployment/configuration) for the full variable reference.
+    Create a `.env` file at the project root. Docker Compose reads it automatically. See [Configuration](/deployment/configuration) for the full variable reference.
 
-    ```bash
-    cp .env.example .env
-    ```
+    At minimum, set the port and database variables before continuing:
 
-    At minimum, set the port variables before continuing:
-
-    ```bash
+    ```bash .env
+    # API Gateway
     API_GATEWAY_PORT=8080
+
+    # Education service
     EDUCATION_PORT=8081
+    EDUCATION_DB_PORT=5434
+    EDUCATION_DB_NAME=education_db
+    EDUCATION_DB_USER=education_user
+    EDUCATION_DB_PASSWORD=education_password
+
+    # Auth service
     AUTH_PORT=8082
+    AUTH_DB_PORT=5433
+    AUTH_DB_NAME=auth_db
+    AUTH_DB_USER=auth_user
+    AUTH_DB_PASSWORD=auth_password
+
+    # Admin service
     ADMIN_PORT=8083
+    ADMIN_DB_PORT=5432
+    ADMIN_DB_NAME=admin_db
+    ADMIN_DB_USER=admin_user
+    ADMIN_DB_PASSWORD=admin_password
     ```
+
+    <Warning>
+      Change the default database passwords before deploying to any shared or production environment.
+    </Warning>
   </Step>
 
   <Step title="Build the Docker images">

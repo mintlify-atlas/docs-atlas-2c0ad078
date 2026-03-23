@@ -82,6 +82,10 @@ management.endpoints.web.exposure.include=health,info,metrics
 management.endpoint.health.show-details=when-authorized
 ```
 
+<Note>
+  The logging namespace `com.gems.admin` in the gateway's `application.properties` is copied verbatim from the source file. In practice this should be `com.gems.api` to match the gateway's own package. This is a known issue in the source configuration.
+</Note>
+
 ### Environment variables
 
 | Variable | Description | Example |

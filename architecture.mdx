@@ -44,7 +44,7 @@ All containers run on the `gems-lms-network` Docker bridge network (`name: gems-
 
 A `shared` Gradle subproject (`java-library`) provides common domain types, value objects, and utilities that all services depend on at compile time.
 
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card title="Reactive stack" icon="bolt">
     Every microservice uses Spring WebFlux and R2DBC for fully non-blocking I/O from the HTTP layer down to the database.
   </Card>
@@ -57,7 +57,7 @@ A `shared` Gradle subproject (`java-library`) provides common domain types, valu
   <Card title="Multi-stage Docker builds" icon="docker">
     Each Dockerfile uses `eclipse-temurin:24-jdk` to build the JAR and `eclipse-temurin:24-jre` as the lean runtime image.
   </Card>
-</Columns>
+</CardGroup>
 
 ## Hexagonal (clean) architecture
 
