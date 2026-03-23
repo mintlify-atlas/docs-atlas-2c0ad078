@@ -1,0 +1,101 @@
+{
+  "projectType": "api-service",
+  "projectName": "GEMS LMS API",
+  "projectDescription": "A reactive Java Spring Boot microservices platform for a Learning Management System, featuring an API Gateway routing to authentication, education, and admin services backed by PostgreSQL.",
+  "theme": "sequoia",
+  "primaryColor": "#1A73E8",
+  "lightColor": "#4A90D9",
+  "darkColor": "#0D47A1",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker-compose",
+              "deployment/configuration",
+              "deployment/health-checks"
+            ]
+          },
+          {
+            "group": "Microservices",
+            "pages": [
+              "services/api-gateway",
+              "services/ms-auth",
+              "services/ms-education",
+              "services/ms-admin"
+            ]
+          },
+          {
+            "group": "Data",
+            "pages": [
+              "data/schema",
+              "data/database-configuration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/endpoints"
+            ]
+          },
+          {
+            "group": "Education",
+            "pages": [
+              "api/education/endpoints"
+            ]
+          },
+          {
+            "group": "Admin",
+            "pages": [
+              "api/admin/endpoints"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "API Gateway for unified entry point and service routing",
+    "Reactive microservices using Spring WebFlux and R2DBC",
+    "Authentication service with user management",
+    "Education service for LMS course/content management",
+    "Admin service for platform administration",
+    "PostgreSQL databases per microservice (database-per-service pattern)",
+    "Docker Compose orchestration for local development",
+    "Health check endpoints via Spring Actuator",
+    "Hexagonal (Clean) architecture with domain, application, and infrastructure layers"
+  ],
+  "publicApiSurface": [
+    "GET /actuator/health — Health check for all services",
+    "GET /actuator/info — Service information",
+    "GET /actuator/metrics — Service metrics",
+    "api-gateway (port 8080) — Unified API entry point routing to microservices",
+    "ms-auth (port 8082) — User authentication and registration",
+    "ms-education (port 8081) — Education/course management",
+    "ms-admin (port 8083) — Administrative operations",
+    "users table — User accounts with username, email, password, name, active status",
+    "admin_users table — Admin accounts with role-based access"
+  ]
+}
